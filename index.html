@@ -537,37 +537,42 @@ function parseArchive(wb,filename) {
 }
 
 /* ── Parser for Birleşik Excel (already has CariId/AdSoyad columns) ── */
+/* Reads ALL sheets (handles 200K-row splits), skips Mükerrerler/Kontrol! */
 function parseMultiPersonExcel(wb, filename) {
-  const ws=wb.Sheets[wb.SheetNames[0]];
-  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
-  if (rows.length<2) return [];
-  const hdr=rows[0].map(h=>String(h??'').trim());
-  const iCari =colIdx(hdr,'CariId','CariID','cariId','Cari Id');
-  const iAd   =colIdx(hdr,'AdSoyad','Ad Soyad','adSoyad','Ad-Soyad');
-  const iType =colIdx(hdr,'İşlem Türü','Islem Turu','TransactionType');
-  const iDate =colIdx(hdr,'Tarih','CreateDate');
-  const iAmt  =colIdx(hdr,'Miktar','Amount');
-  const iPrice=colIdx(hdr,'Fiyat','Price');
-  const iTotal=colIdx(hdr,'Toplam','Total');
-  const iAsset=colIdx(hdr,'İşlem Çifti','Islem Cifti','AssetCode');
-  const iSrc  =colIdx(hdr,'Kaynak','Source');
   const recs=[];
-  for (let i=1;i<rows.length;i++) {
-    const r=rows[i];
-    if (!r||r.every(c=>c===''||c===null||c===undefined)) continue;
-    const transactionType=String(cellVal(r,iType)).trim();
-    const rawDate=cellVal(r,iDate);
-    const amount=cellVal(r,iAmt);
-    if (!transactionType&&!rawDate&&amount==='') continue;
-    recs.push({
-      cariId:  String(cellVal(r,iCari)).trim(),
-      adSoyad: String(cellVal(r,iAd)).trim(),
-      transactionType, rawDate, amount,
-      price: cellVal(r,iPrice), total: cellVal(r,iTotal),
-      assetCode: String(cellVal(r,iAsset)).trim(),
-      source: String(cellVal(r,iSrc)).trim(),
-      _src: filename,
-    });
+  for (const sheetName of wb.SheetNames) {
+    if (/^(Mükerrerler|Kontrol!)/i.test(sheetName)) continue; // skip non-data sheets
+    const ws=wb.Sheets[sheetName];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+    if (rows.length<2) continue;
+    const hdr=rows[0].map(h=>String(h??'').trim());
+    const iCari =colIdx(hdr,'CariId','CariID','cariId','Cari Id');
+    const iAd   =colIdx(hdr,'AdSoyad','Ad Soyad','adSoyad','Ad-Soyad');
+    const iType =colIdx(hdr,'İşlem Türü','Islem Turu','TransactionType');
+    const iDate =colIdx(hdr,'Tarih','CreateDate');
+    const iAmt  =colIdx(hdr,'Miktar','Amount');
+    const iPrice=colIdx(hdr,'Fiyat','Price');
+    const iTotal=colIdx(hdr,'Toplam','Total');
+    const iAsset=colIdx(hdr,'İşlem Çifti','Islem Cifti','AssetCode');
+    const iSrc  =colIdx(hdr,'Kaynak','Source');
+    if (iCari<0||iType<0) continue; // not a recognisable data sheet
+    for (let i=1;i<rows.length;i++) {
+      const r=rows[i];
+      if (!r||r.every(c=>c===''||c===null||c===undefined)) continue;
+      const transactionType=String(cellVal(r,iType)).trim();
+      const rawDate=cellVal(r,iDate);
+      const amount=cellVal(r,iAmt);
+      if (!transactionType&&!rawDate&&amount==='') continue;
+      recs.push({
+        cariId:  String(cellVal(r,iCari)).trim(),
+        adSoyad: String(cellVal(r,iAd)).trim(),
+        transactionType, rawDate, amount,
+        price: cellVal(r,iPrice), total: cellVal(r,iTotal),
+        assetCode: String(cellVal(r,iAsset)).trim(),
+        source: String(cellVal(r,iSrc)).trim(),
+        _src: filename,
+      });
+    }
   }
   return recs;
 }
@@ -895,13 +900,12 @@ async function topluProcess() {
   const pb=document.getElementById('b-pb'),db=document.getElementById('b-db'),rc=document.getElementById('b-rc');
   const sg=document.getElementById('b-sg'),lb=document.getElementById('b-lb');
   const pw=document.getElementById('b-pw'),pbar=document.getElementById('b-pbar');
-  const validFiles=bFiles.filter(f=>f.type!=='unknown');
+  const validFiles=bFiles; // unknown dosyalar parse sırasında denenir
   const totalFiles=validFiles.length;
   pb.disabled=true; pb.innerHTML=`<span class="spinner"></span> ${totalFiles} dosya yükleniyor…`;
   rc.style.display='block'; db.style.display='none'; lb.innerHTML=''; sg.innerHTML='';
   pw.style.display='block'; pbar.style.width='0%'; bState=null;
   const log=makeLogger('b-lb');
-  bFiles.filter(f=>f.type==='unknown').forEach(f=>log(`⚠  ${f.name}: Tür tanınamadı, atlandı.`,'warning'));
 
   // Phase 1: tüm arrayBuffer'ları paralel oku (I/O)
   await new Promise(r=>setTimeout(r,0));
@@ -920,11 +924,30 @@ async function topluProcess() {
     const item=validFiles[i];
     try {
       const wb=XLSX.read(new Uint8Array(buffers[i]),{type:'array',cellDates:true});
-      const recs=item.type==='transactions'?parseTransactions(wb,item.name):parseArchive(wb,item.name);
-      tRaw+=recs.length;
-      const key=item.meta.cariId||('UNKNOWN_'+item.name);
-      if (!personMap.has(key)) personMap.set(key,{meta:item.meta,afr:[]});
-      personMap.get(key).afr.push({filename:item.name,records:recs});
+      if (item.type==='unknown') {
+        // Uygulamanın kendi çıktısı olabilir — CariId/AdSoyad sütunlu format dene
+        const recs=parseMultiPersonExcel(wb,item.name);
+        if (!recs.length) { log(`⚠  ${item.name}: Tür tanınamadı, atlandı.`,'warning'); continue; }
+        // Kişiye göre dağıt
+        const byPerson=new Map();
+        for (const rec of recs) {
+          const pid=rec.cariId||('UNKNOWN_'+item.name);
+          if (!byPerson.has(pid)) byPerson.set(pid,{meta:{cariId:rec.cariId,adSoyad:rec.adSoyad},list:[]});
+          byPerson.get(pid).list.push(rec);
+        }
+        for (const [pid,{meta,list}] of byPerson) {
+          if (!personMap.has(pid)) personMap.set(pid,{meta,afr:[]});
+          personMap.get(pid).afr.push({filename:item.name,records:list});
+          tRaw+=list.length;
+        }
+        log(`✓  ${item.name} → ${recs.length.toLocaleString('tr-TR')} kayıt (Birleşik format)`,'success');
+      } else {
+        const recs=item.type==='transactions'?parseTransactions(wb,item.name):parseArchive(wb,item.name);
+        tRaw+=recs.length;
+        const key=item.meta.cariId||('UNKNOWN_'+item.name);
+        if (!personMap.has(key)) personMap.set(key,{meta:item.meta,afr:[]});
+        personMap.get(key).afr.push({filename:item.name,records:recs});
+      }
     } catch(e) { log(`✗  ${item.name}: ${e.message}`,'error'); }
   }
   log(`${personMap.size} kişi · ${totalFiles} dosya · ${tRaw.toLocaleString('tr-TR')} satır okundu`,'info');
