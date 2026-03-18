@@ -1,0 +1,46 @@
+{
+  "name": "hesap-mi-hareketi",
+  "version": "1.0.0",
+  "description": "Hesap hareketi analiz ve birleştirme uygulaması",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.kebom.hesapmihareketi",
+    "productName": "Hesap mı Hareketi",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "index.html",
+      "main.js",
+      "lib/**"
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "identity": null,
+      "target": [
+        { "target": "dmg", "arch": ["universal"] }
+      ]
+    },
+    "dmg": {
+      "title": "Hesap mı Hareketi",
+      "contents": [
+        { "x": 410, "y": 160, "type": "link", "path": "/Applications" },
+        { "x": 130, "y": 160, "type": "file" }
+      ],
+      "window": { "width": 540, "height": 300 }
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "exceljs": "^4.3.0",
+    "xlsx": "^0.18.5"
+  }
+}

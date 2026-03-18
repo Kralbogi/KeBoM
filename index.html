@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hesap mı Hareketi?</title>
+  <script src="lib/xlsx.full.min.js"></script>
+  <script src="lib/exceljs.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d1117; color: #c9d1d9; min-height: 100vh;
+      padding: 36px 20px 80px;
+    }
+    .container { max-width: 1020px; margin: 0 auto; }
+    h1 {
+      font-size: 2.1rem; font-weight: 800;
+      background: linear-gradient(135deg, #7c3aed 30%, #a78bfa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; margin-bottom: 6px;
+    }
+    .subtitle { color: #6e7681; font-size: .9rem; margin-bottom: 32px; }
+
+    /* ── Mode tabs ── */
+    .mode-tabs {
+      display: flex; gap: 2px; margin-bottom: 28px;
+      border-bottom: 1px solid #21262d;
+    }
+    .mode-tab {
+      padding: 10px 20px; background: transparent; border: none;
+      border-bottom: 3px solid transparent; color: #6e7681;
+      font-size: .88rem; font-weight: 600; cursor: pointer;
+      transition: all .15s; margin-bottom: -1px; white-space: nowrap;
+    }
+    .mode-tab:hover { color: #c9d1d9; }
+    .mode-tab.active { color: #a78bfa; border-bottom-color: #7c3aed; }
+    .mode-section { display: none; }
+    .mode-section.active { display: block; }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed #30363d; border-radius: 16px;
+      padding: 44px 32px; text-align: center; cursor: pointer;
+      transition: all .2s; background: #161b22; margin-bottom: 18px;
+      user-select: none;
+    }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: #7c3aed; background: #1c2030; }
+    .upload-zone .icon { font-size: 2.8rem; margin-bottom: 12px; }
+    .upload-zone h3   { font-size: .98rem; color: #e6edf3; margin-bottom: 6px; }
+    .upload-zone p    { font-size: .78rem; color: #6e7681; line-height: 1.6; }
+
+    /* ── File list ── */
+    .file-list { display: flex; flex-direction: column; gap: 7px; margin-bottom: 18px; }
+    .file-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; background: #161b22;
+      border-radius: 8px; border: 1px solid #21262d; transition: border-color .15s;
+    }
+    .file-item:hover { border-color: #30363d; }
+    .badge {
+      padding: 2px 10px; border-radius: 999px; font-size: .67rem;
+      font-weight: 700; letter-spacing: .3px; text-transform: uppercase; flex-shrink: 0;
+    }
+    .badge-t { background:#0d2a1f; color:#3fb950; border:1px solid #1a4731; }
+    .badge-a { background:#0c1f3a; color:#58a6ff; border:1px solid #1a3a6a; }
+    .badge-m { background:#1a1030; color:#c084fc; border:1px solid #3d1f6d; }
+    .badge-u { background:#2a1f0a; color:#e3b341; border:1px solid #4a3a1a; }
+    .file-name { flex:1; font-size:.84rem; color:#e6edf3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .file-meta { font-size:.71rem; color:#6e7681; flex-shrink:0; white-space:nowrap; }
+    .file-size { font-size:.71rem; color:#6e7681; flex-shrink:0; }
+    .file-remove {
+      cursor:pointer; color:#6e7681; font-size:.9rem; padding:2px 5px;
+      border-radius:4px; transition:all .15s; flex-shrink:0;
+    }
+    .file-remove:hover { color:#f85149; background:#2a1010; }
+
+    /* ── Buttons ── */
+    .actions { display:flex; gap:10px; margin-bottom:22px; flex-wrap:wrap; }
+    .btn {
+      display:inline-flex; align-items:center; gap:7px;
+      padding:10px 24px; border:none; border-radius:8px;
+      font-size:.88rem; font-weight:600; cursor:pointer; transition:all .2s;
+    }
+    .btn-primary             { background:#7c3aed; color:#fff; }
+    .btn-primary:hover:not(:disabled) { background:#6d28d9; }
+    .btn-primary:disabled    { background:#21262d; color:#484f58; cursor:not-allowed; }
+    .btn-success             { background:#238636; color:#fff; }
+    .btn-success:hover:not(:disabled) { background:#2ea043; }
+    .btn-success:disabled    { background:#21262d; color:#484f58; cursor:not-allowed; }
+    .spinner {
+      display:inline-block; width:13px; height:13px;
+      border:2px solid rgba(255,255,255,.3); border-radius:50%;
+      border-top-color:#fff; animation:spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* ── Results card ── */
+    .results-card {
+      background:#161b22; border:1px solid #21262d;
+      border-radius:16px; padding:24px; margin-bottom:20px;
+    }
+    .results-card > h2 { font-size:.95rem; color:#e6edf3; margin-bottom:18px; font-weight:600; }
+    .stats-grid {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(115px,1fr));
+      gap:10px; margin-bottom:18px;
+    }
+    .stat-card {
+      background:#0d1117; border:1px solid #21262d;
+      border-radius:10px; padding:14px; text-align:center;
+    }
+    .stat-value       { font-size:1.8rem; font-weight:700; color:#a78bfa; line-height:1; }
+    .stat-value.warn  { color:#e3b341; }
+    .stat-value.good  { color:#3fb950; }
+    .stat-label       { font-size:.69rem; color:#6e7681; margin-top:5px; }
+
+    /* ── Log ── */
+    .log-box {
+      background:#0d1117; border:1px solid #21262d; border-radius:8px;
+      padding:11px 14px; font-family:monospace; font-size:.75rem;
+      max-height:180px; overflow-y:auto; white-space:pre-wrap;
+      line-height:1.6; margin-bottom:22px;
+    }
+    .log-success{color:#3fb950} .log-warning{color:#e3b341}
+    .log-error  {color:#f85149} .log-info   {color:#58a6ff}
+
+    /* ── Result tabs ── */
+    .rtabs { display:flex; gap:2px; border-bottom:1px solid #21262d; margin-bottom:18px; }
+    .rtab {
+      padding:8px 16px; background:transparent; border:none;
+      border-bottom:2px solid transparent; color:#6e7681;
+      font-size:.82rem; font-weight:600; cursor:pointer;
+      transition:all .15s; margin-bottom:-1px; white-space:nowrap;
+    }
+    .rtab:hover        { color:#c9d1d9; }
+    .rtab.active       { color:#a78bfa; border-bottom-color:#7c3aed; }
+    .rtab.tab-alert.active { color:#fbbf24; border-bottom-color:#d97706; }
+    .rtab-count {
+      display:inline-block; background:#21262d; color:#8b949e;
+      padding:1px 7px; border-radius:999px; font-size:.66rem; margin-left:5px;
+    }
+    .rtab.active .rtab-count            { background:#2d1f50; color:#a78bfa; }
+    .rtab.tab-alert .rtab-count         { background:#2a1f0a; color:#e3b341; }
+    .rtab.tab-alert.active .rtab-count  { background:#3a2a0a; color:#fbbf24; }
+    .rtab-panel        { display:none; }
+    .rtab-panel.active { display:block; }
+
+    /* ── Table ── */
+    .tbl-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; font-size:.76rem; }
+    th {
+      padding:7px 11px; background:#0d1117; color:#8b949e;
+      font-weight:600; text-align:left; white-space:nowrap;
+      border-bottom:1px solid #21262d; position:sticky; top:0;
+    }
+    td {
+      padding:5px 11px; border-bottom:1px solid #1c2128;
+      color:#c9d1d9; max-width:180px; overflow:hidden;
+      text-overflow:ellipsis; white-space:nowrap;
+    }
+    tr:hover td           { background:#1c2128; }
+    tr.near-dup td        { background:#2a2510; }
+    tr.near-dup:hover td  { background:#332d14; }
+    .tbl-caption { font-size:.77rem; color:#6e7681; margin-bottom:8px; }
+
+    /* ── Tags ── */
+    .tag {
+      display:inline-block; padding:2px 7px; border-radius:999px;
+      font-size:.67rem; font-weight:600; white-space:nowrap;
+    }
+    .tag-buy  {background:#0d2a1f;color:#3fb950}
+    .tag-sell {background:#2a0d0d;color:#f85149}
+    .tag-dep  {background:#0c1f3a;color:#58a6ff}
+    .tag-with {background:#2a1f0a;color:#e3b341}
+    .tag-other{background:#1c1c2a;color:#8b949e}
+
+    /* ── Info boxes ── */
+    .info-box {
+      border-radius:8px; padding:11px 14px; font-size:.77rem;
+      line-height:1.6; margin-bottom:14px;
+    }
+    .info-box.yellow { background:#1f1a0a; border:1px solid #4a3a1a; color:#e3b341; }
+    .info-box.green  { background:#0f1e0f; border:1px solid #1a4731; color:#8b949e; }
+
+    .empty-msg { color:#6e7681; font-size:.875rem; padding:20px 0; text-align:center; }
+
+    /* ── Progress bar ── */
+    .progress-bar-wrap {
+      background:#0d1117; border:1px solid #21262d;
+      border-radius:8px; height:9px; overflow:hidden; margin-bottom:14px;
+    }
+    .progress-bar {
+      height:100%; background:linear-gradient(90deg,#7c3aed,#a78bfa);
+      transition:width .3s ease; width:0%;
+    }
+
+    .file-count-note { font-size:.8rem; color:#6e7681; margin-bottom:10px; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>Hesap mı Hareketi?</h1>
+  <p class="subtitle">Hesap hareketlerini birleştir · mükerrer kayıtları temizle · temiz Excel'i indir</p>
+
+  <div class="mode-tabs">
+    <button class="mode-tab active" onclick="setMode('tekil')">Tekil Kişi</button>
+    <button class="mode-tab"        onclick="setMode('toplu')">Toplu &nbsp;·&nbsp; 500 Kişiye Kadar</button>
+    <button class="mode-tab"        onclick="setMode('birlesik')">Birleşik Excel</button>
+  </div>
+
+  <!-- ══ TEKİL ══ -->
+  <div id="section-tekil" class="mode-section active">
+    <div class="upload-zone" id="t-uz">
+      <div class="icon">📁</div>
+      <h3>Excel dosyalarını buraya sürükle ya da tıkla</h3>
+      <p>
+        Dosya adında <strong>Transactions</strong> geçen → işlem dosyası &nbsp;|&nbsp;
+        <strong>Archive</strong> geçen → arşiv dosyası<br>
+        CariId ve AdSoyad dosya adından otomatik okunur &nbsp;·&nbsp; .xlsx / .xls
+      </p>
+      <input type="file" id="t-fi" multiple accept=".xlsx,.xls" />
+    </div>
+    <div class="file-list" id="t-fl"></div>
+    <div class="actions">
+      <button class="btn btn-primary" id="t-pb" disabled onclick="tekilProcess()">Dosyaları İşle</button>
+      <button class="btn btn-success" id="t-db" style="display:none" onclick="tekilDownload()">⬇&nbsp; Excel İndir</button>
+    </div>
+    <div class="results-card" id="t-rc" style="display:none">
+      <h2>İşlem Raporu</h2>
+      <div class="stats-grid" id="t-sg"></div>
+      <div class="log-box"    id="t-lb"></div>
+      <div class="rtabs">
+        <button class="rtab active"    id="t-tab-clean"   onclick="tekilTab('clean')">Temiz Kayıtlar <span class="rtab-count" id="t-cc">0</span></button>
+        <button class="rtab"           id="t-tab-dupes"   onclick="tekilTab('dupes')">Mükerrerler <span class="rtab-count" id="t-cd">0</span></button>
+        <button class="rtab tab-alert" id="t-tab-kontrol" onclick="tekilTab('kontrol')">⚠ Kontrol! <span class="rtab-count" id="t-ck">0</span></button>
+      </div>
+      <div class="rtab-panel active" id="t-p-clean"></div>
+      <div class="rtab-panel"        id="t-p-dupes"></div>
+      <div class="rtab-panel"        id="t-p-kontrol"></div>
+    </div>
+  </div>
+
+  <!-- ══ TOPLU ══ -->
+  <div id="section-toplu" class="mode-section">
+    <div class="upload-zone" id="b-uz">
+      <div class="icon">📦</div>
+      <h3>Birden fazla kişiye ait Excel dosyalarını yükle</h3>
+      <p>
+        Dosya adı <strong>CariId_Ad_Soyad_Transactions/Archive_...</strong> biçiminde olmalıdır<br>
+        Aynı CariId'ye ait dosyalar otomatik gruplandırılır &nbsp;·&nbsp; Maksimum <strong>500 dosya</strong>
+      </p>
+      <input type="file" id="b-fi" multiple accept=".xlsx,.xls" />
+    </div>
+    <div class="file-count-note" id="b-fn" style="display:none"></div>
+    <div class="file-list" id="b-fl"></div>
+    <div class="actions">
+      <button class="btn btn-primary" id="b-pb" disabled onclick="topluProcess()">Toplu İşle</button>
+      <button class="btn btn-success" id="b-db" style="display:none" onclick="topluDownload()">⬇&nbsp; Toplu Excel İndir</button>
+    </div>
+    <div class="results-card" id="b-rc" style="display:none">
+      <h2>Toplu İşlem Raporu</h2>
+      <div class="stats-grid"        id="b-sg"></div>
+      <div class="progress-bar-wrap" id="b-pw" style="display:none"><div class="progress-bar" id="b-pbar"></div></div>
+      <div class="log-box"           id="b-lb"></div>
+    </div>
+  </div>
+
+  <!-- ══ BİRLEŞİK EXCEL ══ -->
+  <div id="section-birlesik" class="mode-section">
+    <div class="upload-zone" id="m-uz">
+      <div class="icon">🗂️</div>
+      <h3>İçinde birden fazla kişi olan Excel dosyalarını yükle</h3>
+      <p>
+        Bu modda yüklenen Excel'lerde <strong>CariId</strong> ve <strong>AdSoyad</strong> sütunları bulunmalıdır<br>
+        Her dosya birden fazla kişinin verisini içerebilir · Dosyalar arasında kişi bazında mükerrer kontrolü yapılır<br>
+        .xlsx / .xls desteklenir
+      </p>
+      <input type="file" id="m-fi" multiple accept=".xlsx,.xls" />
+    </div>
+    <div class="file-count-note" id="m-fn" style="display:none"></div>
+    <div class="file-list" id="m-fl"></div>
+    <div class="actions">
+      <button class="btn btn-primary" id="m-pb" disabled onclick="birlesikProcess()">İşle</button>
+      <button class="btn btn-success" id="m-db" style="display:none" onclick="birlesikDownload()">⬇&nbsp; Excel İndir</button>
+    </div>
+    <div class="results-card" id="m-rc" style="display:none">
+      <h2>Birleşik Excel Raporu</h2>
+      <div class="stats-grid"        id="m-sg"></div>
+      <div class="progress-bar-wrap" id="m-pw" style="display:none"><div class="progress-bar" id="m-pbar"></div></div>
+      <div class="log-box"           id="m-lb"></div>
+      <div class="rtabs">
+        <button class="rtab active"    id="m-tab-clean"   onclick="birlesikTab('clean')">Temiz Kayıtlar <span class="rtab-count" id="m-cc">0</span></button>
+        <button class="rtab"           id="m-tab-dupes"   onclick="birlesikTab('dupes')">Mükerrerler <span class="rtab-count" id="m-cd">0</span></button>
+        <button class="rtab tab-alert" id="m-tab-kontrol" onclick="birlesikTab('kontrol')">⚠ Kontrol! <span class="rtab-count" id="m-ck">0</span></button>
+      </div>
+      <div class="rtab-panel active" id="m-p-clean"></div>
+      <div class="rtab-panel"        id="m-p-dupes"></div>
+      <div class="rtab-panel"        id="m-p-kontrol"></div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   SHARED UTILITIES
+═══════════════════════════════════════════════════════════════ */
+function setMode(m) {
+  document.querySelectorAll('.mode-tab').forEach((t, i) =>
+    t.classList.toggle('active', ['tekil','toplu','birlesik'][i] === m));
+  ['tekil','toplu','birlesik'].forEach(x =>
+    document.getElementById(`section-${x}`).classList.toggle('active', x === m));
+}
+
+function getFileType(name) {
+  if (name.includes('Transactions')) return 'transactions';
+  if (name.includes('Archive'))      return 'archive';
+  return 'unknown';
+}
+
+function parseFileMeta(filename) {
+  const base = filename.replace(/\.(xlsx|xls)$/i, '');
+  const m = base.match(/^(\d{1,7})_(.*)/);
+  if (!m) return { cariId: '', adSoyad: '' };
+  const cariId = m[1];
+  const rest = m[2].replace(/[_\s]*(Transactions|Archive).*$/i, '');
+  const adSoyad = rest.split('_').filter(Boolean)
+    .map(p => p ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : '')
+    .join(' ').trim();
+  return { cariId, adSoyad };
+}
+
+function fmtSize(b) {
+  if (b < 1024)    return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+
+/* ── Date ── */
+function toDate(v) {
+  if (!v && v !== 0) return null;
+  if (v instanceof Date) return isNaN(v) ? null : new Date(v);
+  if (typeof v === 'number') { const d=new Date(Math.round((v-25569)*86400000)); return isNaN(d)?null:d; }
+  if (typeof v === 'string') {
+    const s=v.trim(); if (!s) return null;
+    let d=new Date(s); if (!isNaN(d)) return d;
+    const m1=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2}):(\d{2}))?/);
+    if (m1) { d=new Date(`${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}${m1[4]?'T'+m1[4].padStart(2,'0')+':'+m1[5]+':'+m1[6]:'T00:00:00'}`); return isNaN(d)?null:d; }
+    const m2=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}):(\d{2}))?/);
+    if (m2) { d=new Date(`${m2[3]}-${m2[2].padStart(2,'0')}-${m2[1].padStart(2,'0')}${m2[4]?'T'+m2[4].padStart(2,'0')+':'+m2[5]+':'+m2[6]:'T00:00:00'}`); return isNaN(d)?null:d; }
+  }
+  return null;
+}
+function dateKey(v) {
+  const d=toDate(v); if (!d) return String(v??'');
+  const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+function fmtDate(v) {
+  const d=toDate(v); if (!d) return String(v??'');
+  const p=n=>String(n).padStart(2,'0');
+  return `${p(d.getDate())}.${p(d.getMonth()+1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/* ── Numbers ── */
+function parseAmt(v) {
+  if (typeof v==='number') return v;
+  if (typeof v==='string'&&v.trim()) { const n=parseFloat(v.replace(',','.')); return isNaN(n)?null:n; }
+  return null;
+}
+function amtsEq(a,b) {
+  const na=parseAmt(a),nb=parseAmt(b);
+  if (na!==null&&nb!==null) return Math.abs(na-nb)<1e-8;
+  return String(a??'').trim()===String(b??'').trim();
+}
+function toNum(v) {
+  if (typeof v==='number') return v;
+  if (typeof v==='string'&&v.trim()) { const n=parseFloat(v.replace(',','.')); if (!isNaN(n)) return n; }
+  return v===''?'':v;
+}
+
+/* ── Dedup key (exact) — includes cariId so cross-person dedup never occurs ── */
+function dedupKey(rec) {
+  const cari  = String(rec.cariId??'').trim().toLowerCase();
+  const dk    = dateKey(rec.rawDate);
+  const type  = String(rec.transactionType??'').trim().toLowerCase();
+  const asset = String(rec.assetCode??'').trim().toLowerCase();
+  const raw   = rec.amount;
+  const num   = parseFloat(typeof raw==='string'?raw.replace(',','.'):raw);
+  const amt   = isNaN(num)?String(raw??''):num.toFixed(8);
+  return `${cari}|${dk}|${type}|${amt}|${asset}`;
+}
+
+/* ── Value key for near-dedup — also includes cariId ── */
+function valueKey(rec) {
+  const cari  = String(rec.cariId??'').trim().toLowerCase();
+  const norm  = v=>{ const n=parseAmt(v); return n!==null?n.toFixed(8):String(v??'').trim(); };
+  return [cari,
+    String(rec.transactionType??'').trim().toLowerCase(),
+    String(rec.assetCode??'').trim().toLowerCase(),
+    norm(rec.amount), norm(rec.price), norm(rec.total),
+  ].join('|');
+}
+
+/* ── Cross-file exact dedup ── */
+function exactDedup(allFileRecords) {
+  const seen=new Set(); const kept=[]; const removed=[];
+  for (const {records} of allFileRecords) {
+    const fk=new Set(); const fk2=[];
+    for (const rec of records) {
+      const k=dedupKey(rec);
+      if (seen.has(k)) removed.push(rec);
+      else { fk2.push(rec); fk.add(k); }
+    }
+    for (const k of fk) seen.add(k);
+    kept.push(...fk2);
+  }
+  return {kept,removed};
+}
+
+/* ── Near-dedup: same values, ≤1000ms, CROSS-FILE only ──
+   Records from the same source file (_src) are never removed
+   against each other — financial markets can yield identical
+   orders at the same second within a single file. ── */
+function nearDedup(records) {
+  const groups=new Map();
+  records.forEach((rec,idx)=>{
+    const vk=valueKey(rec);
+    if (!groups.has(vk)) groups.set(vk,[]);
+    groups.get(vk).push({rec,idx});
+  });
+  const removedIdxs=new Set();
+  for (const items of groups.values()) {
+    if (items.length<2) continue;
+    const sorted=[...items].sort((a,b)=>{
+      const da=toDate(a.rec.rawDate),db=toDate(b.rec.rawDate);
+      if (!da&&!db) return 0; if (!da) return 1; if (!db) return -1;
+      return da-db;
+    });
+    const keptItems=[];
+    for (const {rec,idx} of sorted) {
+      const d=toDate(rec.rawDate);
+      if (!d) continue;
+      let isDup=false;
+      for (const k of keptItems) {
+        if (k.src!==rec._src && Math.abs(d-k.date)<=1000) { isDup=true; break; }
+      }
+      if (isDup) removedIdxs.add(idx);
+      else keptItems.push({date:d,src:rec._src});
+    }
+  }
+  return {
+    kept:       records.filter((_,i)=>!removedIdxs.has(i)),
+    nearRemoved:records.filter((_,i)=> removedIdxs.has(i)),
+  };
+}
+
+function sortByDate(arr) {
+  return [...arr].sort((a,b)=>{
+    const da=toDate(a.rawDate),db=toDate(b.rawDate);
+    if (!da&&!db) return 0; if (!da) return 1; if (!db) return -1;
+    return da-db;
+  });
+}
+function sortByCariDate(arr) {
+  return [...arr].sort((a,b)=>{
+    const ca=parseInt(a.cariId)||0, cb=parseInt(b.cariId)||0;
+    if (ca!==cb) return ca-cb;
+    const da=toDate(a.rawDate),db=toDate(b.rawDate);
+    if (!da&&!db) return 0; if (!da) return 1; if (!db) return -1;
+    return da-db;
+  });
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── Excel parsing helpers ── */
+function colIdx(hdr,...names) {
+  for (const n of names) { const i=hdr.findIndex(h=>String(h).trim().toLowerCase()===n.toLowerCase()); if(i!==-1) return i; }
+  return -1;
+}
+function cellVal(row,idx) {
+  if (idx===-1||idx>=row.length) return '';
+  const v=row[idx]; return (v===null||v===undefined)?'':v;
+}
+
+function parseTransactions(wb,filename) {
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+  if (rows.length<2) return [];
+  const hdr=rows[0].map(h=>String(h??'').trim());
+  const iT=colIdx(hdr,'TransactionType'),iD=colIdx(hdr,'CreateDate'),
+        iA=colIdx(hdr,'Amount'),iP=colIdx(hdr,'Price'),iTo=colIdx(hdr,'Total'),
+        iAs=colIdx(hdr,'AssetCode'),iS=colIdx(hdr,'Source');
+  const recs=[];
+  for (let i=1;i<rows.length;i++) {
+    const r=rows[i];
+    if (!r||r.every(c=>c===''||c===null||c===undefined)) continue;
+    const transactionType=String(cellVal(r,iT)).trim();
+    const rawDate=cellVal(r,iD);
+    const amount=cellVal(r,iA);
+    if (!transactionType&&!rawDate&&amount==='') continue;
+    recs.push({transactionType,rawDate,amount,
+      price:cellVal(r,iP),total:cellVal(r,iTo),
+      assetCode:String(cellVal(r,iAs)).trim(),
+      source:String(cellVal(r,iS)).trim(),
+      cariId:'',adSoyad:'',_src:filename});
+  }
+  return recs;
+}
+
+function parseArchive(wb,filename) {
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+  if (rows.length<2) return [];
+  const hdr=rows[0].map(h=>String(h??'').trim());
+  const iAS=colIdx(hdr,'AlisSatis'),iD=colIdx(hdr,'Tarih'),
+        iA=colIdx(hdr,'Miktar'),iP=colIdx(hdr,'Fiyat'),iTo=colIdx(hdr,'Toplam'),
+        iB=colIdx(hdr,'BaseAsset'),iQ=colIdx(hdr,'QuoteAsset');
+  const recs=[];
+  for (let i=1;i<rows.length;i++) {
+    const r=rows[i];
+    if (!r||r.every(c=>c===''||c===null||c===undefined)) continue;
+    const as=String(cellVal(r,iAS)).trim();
+    if (as!=='Alis'&&as!=='Satis') continue;
+    const base=String(cellVal(r,iB)).trim(),quote=String(cellVal(r,iQ)).trim();
+    recs.push({
+      transactionType:as==='Alis'?'Alış Emri':'Satış Emri',
+      rawDate:cellVal(r,iD),amount:cellVal(r,iA),
+      price:cellVal(r,iP),total:cellVal(r,iTo),
+      assetCode:(base&&quote)?`${base}/${quote}`:(base||quote),
+      source:'',cariId:'',adSoyad:'',_src:filename});
+  }
+  return recs;
+}
+
+/* ── Parser for Birleşik Excel (already has CariId/AdSoyad columns) ── */
+function parseMultiPersonExcel(wb, filename) {
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+  if (rows.length<2) return [];
+  const hdr=rows[0].map(h=>String(h??'').trim());
+  const iCari =colIdx(hdr,'CariId','CariID','cariId','Cari Id');
+  const iAd   =colIdx(hdr,'AdSoyad','Ad Soyad','adSoyad','Ad-Soyad');
+  const iType =colIdx(hdr,'İşlem Türü','Islem Turu','TransactionType');
+  const iDate =colIdx(hdr,'Tarih','CreateDate');
+  const iAmt  =colIdx(hdr,'Miktar','Amount');
+  const iPrice=colIdx(hdr,'Fiyat','Price');
+  const iTotal=colIdx(hdr,'Toplam','Total');
+  const iAsset=colIdx(hdr,'İşlem Çifti','Islem Cifti','AssetCode');
+  const iSrc  =colIdx(hdr,'Kaynak','Source');
+  const recs=[];
+  for (let i=1;i<rows.length;i++) {
+    const r=rows[i];
+    if (!r||r.every(c=>c===''||c===null||c===undefined)) continue;
+    const transactionType=String(cellVal(r,iType)).trim();
+    const rawDate=cellVal(r,iDate);
+    const amount=cellVal(r,iAmt);
+    if (!transactionType&&!rawDate&&amount==='') continue;
+    recs.push({
+      cariId:  String(cellVal(r,iCari)).trim(),
+      adSoyad: String(cellVal(r,iAd)).trim(),
+      transactionType, rawDate, amount,
+      price: cellVal(r,iPrice), total: cellVal(r,iTotal),
+      assetCode: String(cellVal(r,iAsset)).trim(),
+      source: String(cellVal(r,iSrc)).trim(),
+      _src: filename,
+    });
+  }
+  return recs;
+}
+
+/* ── Table render helpers ── */
+function txTag(type) {
+  const t=String(type).toLowerCase();
+  if (t.includes('alış'))  return `<span class="tag tag-buy">${esc(type)}</span>`;
+  if (t.includes('satış')) return `<span class="tag tag-sell">${esc(type)}</span>`;
+  if (t.includes('yatır')) return `<span class="tag tag-dep">${esc(type)}</span>`;
+  if (t.includes('çekme')) return `<span class="tag tag-with">${esc(type)}</span>`;
+  return `<span class="tag tag-other">${esc(type)}</span>`;
+}
+
+function buildRow(rec, rowNum, isNearDup, showPerson) {
+  const cls=isNearDup?' class="near-dup"':'';
+  const personCols=showPerson
+    ?`<td>${esc(String(rec.cariId??''))}</td><td>${esc(String(rec.adSoyad??''))}</td>`
+    :'';
+  return `<tr${cls}>
+    <td style="color:#6e7681">${rowNum}</td>
+    ${personCols}
+    <td>${txTag(rec.transactionType)}</td>
+    <td>${esc(fmtDate(rec.rawDate))}</td>
+    <td>${esc(String(rec.amount??''))}</td>
+    <td>${esc(String(rec.price??''))}</td>
+    <td>${esc(String(rec.total??''))}</td>
+    <td>${esc(String(rec.assetCode??''))}</td>
+    <td title="${esc(String(rec.source??''))}">${esc(String(rec.source??'').substring(0,40))}</td>
+  </tr>`;
+}
+
+function buildTable(rowsHtml, showPerson) {
+  const personTh=showPerson?'<th>CariId</th><th>AdSoyad</th>':'';
+  const thead=`<tr><th>#</th>${personTh}<th>İşlem Türü</th><th>Tarih</th><th>Miktar</th><th>Fiyat</th><th>Toplam</th><th>İşlem Çifti</th><th>Kaynak</th></tr>`;
+  return `<div class="tbl-wrap"><table><thead>${thead}</thead><tbody>${rowsHtml}</tbody></table></div>`;
+}
+
+function renderPanel(panelEl, records, nearDupSet, caption, infoHtml, showPerson, limit=100) {
+  if (!records.length) { panelEl.innerHTML='<p class="empty-msg">Gösterilecek kayıt yok.</p>'; return; }
+  const shown=records.slice(0,limit);
+  const cap=records.length>limit
+    ?`İlk ${limit} gösteriliyor (toplam ${records.length}) · tamamı Excel'de`
+    :`Tüm ${records.length} kayıt`;
+  panelEl.innerHTML=
+    (infoHtml||'')+
+    `<p class="tbl-caption">${caption||cap}</p>`+
+    buildTable(shown.map((r,i)=>buildRow(r,i+1,nearDupSet&&nearDupSet.has(i),showPerson)).join(''),showPerson);
+}
+
+/* ── ExcelJS export ── */
+async function buildWorkbook({cleanRecords,exactRemovedRecords,nearRemovedRecords,includePersonCols}) {
+  const wb=new ExcelJS.Workbook();
+  wb.creator='Hesap mı Hareketi?'; wb.created=new Date();
+  const YELLOW='FFFFFF99';
+  const personCols=includePersonCols?[
+    {header:'CariId',  key:'cariId', width:10},
+    {header:'AdSoyad', key:'adSoyad',width:22},
+  ]:[];
+  const baseCols=[
+    ...personCols,
+    {header:'İşlem Türü',  key:'type',  width:18},
+    {header:'Tarih',       key:'date',  width:22},
+    {header:'Miktar',      key:'amt',   width:18},
+    {header:'Fiyat',       key:'price', width:18},
+    {header:'Toplam',      key:'total', width:18},
+    {header:'İşlem Çifti', key:'asset', width:16},
+    {header:'Kaynak',      key:'source',width:44},
+  ];
+  function styleHdr(ws) {
+    ws.getRow(1).eachCell(c=>{ c.font={bold:true,color:{argb:'FFE6EDF3'}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF161B22'}}; c.alignment={vertical:'middle'}; });
+  }
+  function recRow(rec) {
+    const base={type:String(rec.transactionType??''),date:fmtDate(rec.rawDate),amt:toNum(rec.amount),price:toNum(rec.price),total:toNum(rec.total),asset:String(rec.assetCode??''),source:String(rec.source??'')};
+    return includePersonCols?{cariId:rec.cariId??'',adSoyad:rec.adSoyad??'',...base}:base;
+  }
+  // Sheet 1: clean
+  const ws1=wb.addWorksheet('Hesap Hareketleri');
+  ws1.columns=baseCols; styleHdr(ws1);
+  cleanRecords.forEach(rec=>ws1.addRow(recRow(rec)));
+  // Sheet 2: exact removed
+  if (exactRemovedRecords&&exactRemovedRecords.length) {
+    const ws2=wb.addWorksheet('Mükerrerler');
+    ws2.columns=baseCols.map(c=>({...c})); styleHdr(ws2);
+    exactRemovedRecords.forEach(rec=>ws2.addRow(recRow(rec)));
+  }
+  // Sheet 3: near removed (yellow)
+  if (nearRemovedRecords&&nearRemovedRecords.length) {
+    const ws3=wb.addWorksheet('Kontrol!');
+    ws3.columns=baseCols.map(c=>({...c}));
+    ws3.getRow(1).eachCell(c=>{ c.font={bold:true,color:{argb:'FFFBBF24'}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F1A0A'}}; });
+    nearRemovedRecords.forEach(rec=>{
+      const row=ws3.addRow(recRow(rec));
+      row.eachCell(c=>{ c.fill={type:'pattern',pattern:'solid',fgColor:{argb:YELLOW}}; c.font={color:{argb:'FF333300'}}; });
+    });
+  }
+  return wb;
+}
+async function triggerDownload(wb,filename) {
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ── Fast SheetJS export — 200K satırda yeni sheet, gerçek zamanlı progress ── */
+async function buildWorkbookFast({cleanRecords,exactRemovedRecords,nearRemovedRecords,includePersonCols,onProgress}) {
+  const personH=includePersonCols?['CariId','AdSoyad']:[];
+  const hdr=[...personH,'İşlem Türü','Tarih','Miktar','Fiyat','Toplam','İşlem Çifti','Kaynak'];
+  function toRow(rec) {
+    const base=[String(rec.transactionType??''),fmtDate(rec.rawDate),toNum(rec.amount),toNum(rec.price),toNum(rec.total),String(rec.assetCode??''),String(rec.source??'')];
+    return includePersonCols?[rec.cariId??'',rec.adSoyad??'',...base]:base;
+  }
+  const SHEET_MAX=200000, CHUNK=5000;
+  const wb=XLSX.utils.book_new();
+  const grandTotal=(cleanRecords.length)+(exactRemovedRecords?.length||0)+(nearRemovedRecords?.length||0);
+  let globalDone=0;
+
+  async function appendSheets(records, baseName) {
+    const n=Math.ceil(records.length/SHEET_MAX)||1;
+    for (let s=0;s<n;s++) {
+      const slice=records.slice(s*SHEET_MAX,(s+1)*SHEET_MAX);
+      const name=n>1?`${baseName} (${s+1})`:baseName;
+      const aoa=[hdr];
+      for (let i=0;i<slice.length;i++) {
+        aoa.push(toRow(slice[i]));
+        if (i%CHUNK===CHUNK-1) {
+          globalDone+=CHUNK;
+          onProgress&&onProgress(globalDone,grandTotal,name,s+1,n);
+          await new Promise(r=>setTimeout(r,0));
+        }
+      }
+      globalDone+=slice.length%CHUNK||0;
+      onProgress&&onProgress(globalDone,grandTotal,name,s+1,n);
+      await new Promise(r=>setTimeout(r,0));
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),name);
+    }
+  }
+
+  await appendSheets(cleanRecords,'Hesap Hareketleri');
+  if (exactRemovedRecords&&exactRemovedRecords.length) await appendSheets(exactRemovedRecords,'Mükerrerler');
+  if (nearRemovedRecords&&nearRemovedRecords.length)   await appendSheets(nearRemovedRecords,'Kontrol!');
+
+  onProgress&&onProgress(grandTotal,grandTotal,'Dosya yazılıyor…',0,0);
+  await new Promise(r=>setTimeout(r,0));
+  return XLSX.write(wb,{type:'array',bookType:'xlsx'});
+}
+function triggerDownloadFast(buf,filename) {
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+function todayStamp() {
+  const n=new Date();
+  return `${n.getFullYear()}${String(n.getMonth()+1).padStart(2,'0')}${String(n.getDate()).padStart(2,'0')}`;
+}
+
+/* ─────────────────────── LOG HELPER ─────────────────────── */
+function makeLogger(boxId) {
+  const box=document.getElementById(boxId);
+  return function(msg,type='') {
+    const s=document.createElement('span'); if(type) s.className=`log-${type}`;
+    s.textContent=msg+'\n'; box.appendChild(s); box.scrollTop=box.scrollHeight;
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TEKİL MODE
+═══════════════════════════════════════════════════════════════ */
+let tFiles=[], tState=null;
+
+function tSetup(zoneId,inputId,removePrefix) {
+  const uz=document.getElementById(zoneId), fi=document.getElementById(inputId);
+  uz.addEventListener('click',()=>fi.click());
+  uz.addEventListener('dragover',e=>{e.preventDefault();uz.classList.add('drag-over');});
+  uz.addEventListener('dragleave',()=>uz.classList.remove('drag-over'));
+  uz.addEventListener('drop',e=>{e.preventDefault();uz.classList.remove('drag-over');tHandleFiles(e.dataTransfer.files);});
+  fi.addEventListener('change',e=>{tHandleFiles(e.target.files);e.target.value='';});
+}
+tSetup('t-uz','t-fi');
+
+function tHandleFiles(fileList) {
+  for (const f of fileList) {
+    if (!/\.(xlsx|xls)$/i.test(f.name)) continue;
+    if (tFiles.find(u=>u.name===f.name)) continue;
+    tFiles.push({file:f,name:f.name,type:getFileType(f.name),meta:parseFileMeta(f.name),sizeLabel:fmtSize(f.size)});
+  }
+  tRenderList(); document.getElementById('t-pb').disabled=tFiles.length===0;
+}
+function tRemoveFile(idx) {
+  tFiles.splice(idx,1); tRenderList();
+  document.getElementById('t-pb').disabled=tFiles.length===0;
+  tState=null;
+  document.getElementById('t-db').style.display='none';
+  document.getElementById('t-rc').style.display='none';
+}
+function tRenderList() {
+  const el=document.getElementById('t-fl'); el.innerHTML='';
+  tFiles.forEach((item,i)=>{
+    const bc=item.type==='transactions'?'badge-t':item.type==='archive'?'badge-a':'badge-u';
+    const bt=item.type==='transactions'?'Transactions':item.type==='archive'?'Archive':'Bilinmiyor';
+    const ms=item.meta.cariId?`${item.meta.cariId} · ${item.meta.adSoyad}`:'';
+    const div=document.createElement('div'); div.className='file-item';
+    div.innerHTML=`<span class="badge ${bc}">${bt}</span><span class="file-name" title="${esc(item.name)}">${esc(item.name)}</span>${ms?`<span class="file-meta">${esc(ms)}</span>`:''}<span class="file-size">${item.sizeLabel}</span><span class="file-remove" onclick="tRemoveFile(${i})">✕</span>`;
+    el.appendChild(div);
+  });
+}
+function tekilTab(name) {
+  ['clean','dupes','kontrol'].forEach(t=>{
+    document.getElementById(`t-tab-${t}`).classList.toggle('active',t===name);
+    document.getElementById(`t-p-${t}`).classList.toggle('active',t===name);
+  });
+}
+async function tekilProcess() {
+  const pb=document.getElementById('t-pb'), db=document.getElementById('t-db');
+  const rc=document.getElementById('t-rc'), sg=document.getElementById('t-sg');
+  const lb=document.getElementById('t-lb');
+  pb.disabled=true; pb.innerHTML='<span class="spinner"></span> İşleniyor…';
+  rc.style.display='block'; db.style.display='none';
+  lb.innerHTML=''; sg.innerHTML='';
+  ['clean','dupes','kontrol'].forEach(t=>{ document.getElementById(`t-p-${t}`).innerHTML=''; document.getElementById(`t-c${t[0]}`).textContent='0'; });
+  tState=null; tekilTab('clean');
+  const log=makeLogger('t-lb');
+  log('Dosyalar okunuyor…','info');
+  const allFile=[]; let totalRaw=0;
+  for (const item of tFiles) {
+    if (item.type==='unknown') { log(`⚠  ${item.name}: Tür tanınamadı, atlandı.`,'warning'); continue; }
+    try {
+      const wb=XLSX.read(new Uint8Array(await item.file.arrayBuffer()),{type:'array',cellDates:true});
+      const recs=item.type==='transactions'?parseTransactions(wb,item.name):parseArchive(wb,item.name);
+      log(`✓  ${item.name} → ${recs.length} kayıt`,'success');
+      totalRaw+=recs.length; allFile.push({filename:item.name,records:recs});
+    } catch(err) { log(`✗  ${item.name}: ${err.message}`,'error'); }
+  }
+  if (!allFile.length) { log('İşlenebilir dosya yok.','error'); pb.disabled=false; pb.innerHTML='Dosyaları İşle'; return; }
+  log('\nTam mükerrer kontrolü…','info');
+  const {kept:ae,removed:er}=exactDedup(allFile);
+  log(`  Tam mükerrer çıkarılan: ${er.length}`,er.length>0?'warning':'success');
+  log('1000ms mükerrer kontrolü (çapraz dosya)…','info');
+  const {kept:clean,nearRemoved:nr}=nearDedup(sortByDate(ae));
+  log(`  1000ms mükerrer çıkarılan: ${nr.length}`,nr.length>0?'warning':'success');
+  const meta=tFiles.find(f=>f.meta.cariId)?.meta||{cariId:'',adSoyad:''};
+  [...clean,...er,...nr].forEach(r=>{ r.cariId=meta.cariId; r.adSoyad=meta.adSoyad; });
+  tState={cleanRecords:clean,exactRemoved:er,nearRemoved:nr,meta};
+  log(`\n────────────────────────────`,'info');
+  log(`Toplam okunan   : ${totalRaw}`,'info');
+  log(`Tam mükerrer    : ${er.length}`,er.length>0?'warning':'success');
+  log(`1000ms mükerrer : ${nr.length}`,nr.length>0?'warning':'success');
+  log(`Temiz kayıt     : ${clean.length}`,'success');
+  sg.innerHTML=[
+    {v:totalRaw,l:'Toplam Kayıt',c:''},
+    {v:er.length,l:'Tam Mükerrer',c:er.length>0?' warn':''},
+    {v:nr.length,l:'1000ms Mükerrer',c:nr.length>0?' warn':''},
+    {v:clean.length,l:'Temiz Kayıt',c:''},
+    {v:allFile.length,l:'Dosya',c:''},
+  ].map(s=>`<div class="stat-card"><div class="stat-value${s.c}">${s.v}</div><div class="stat-label">${s.l}</div></div>`).join('');
+  document.getElementById('t-cc').textContent=clean.length;
+  document.getElementById('t-cd').textContent=er.length;
+  document.getElementById('t-ck').textContent=nr.length;
+  const hasPerson=!!(meta.cariId||meta.adSoyad);
+  renderPanel(document.getElementById('t-p-clean'),  clean,  null,null,null,hasPerson);
+  renderPanel(document.getElementById('t-p-dupes'),  er,     null,null,`<div class="info-box green">Farklı dosyalarda birebir aynı olan ve çıkarılan <strong>${er.length}</strong> kayıt.</div>`,hasPerson);
+  renderPanel(document.getElementById('t-p-kontrol'),nr,     null,null,`<div class="info-box yellow">⚠ Değerleri birebir aynı, farklı dosyalar arası ≤1000ms farkla otomatik silinen <strong>${nr.length}</strong> kayıt.</div>`,hasPerson,500);
+  db.style.display='inline-flex'; pb.disabled=false; pb.innerHTML='Dosyaları İşle';
+}
+async function tekilDownload() {
+  if (!tState) return;
+  const btn=document.getElementById('t-db');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Hazırlanıyor…';
+  try {
+    const hasPerson=!!(tState.meta.cariId||tState.meta.adSoyad);
+    const wb=await buildWorkbook({cleanRecords:tState.cleanRecords,exactRemovedRecords:tState.exactRemoved,nearRemovedRecords:tState.nearRemoved,includePersonCols:hasPerson});
+    const name=tState.meta.cariId?`HesapHareketleri_${tState.meta.cariId}_${todayStamp()}.xlsx`:`HesapHareketleri_${todayStamp()}.xlsx`;
+    await triggerDownload(wb,name);
+  } catch(e) { alert('Hata: '+e.message); }
+  btn.disabled=false; btn.innerHTML='⬇&nbsp; Excel İndir';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TOPLU MODE
+═══════════════════════════════════════════════════════════════ */
+const MAX_BATCH=500;
+let bFiles=[], bState=null;
+
+document.getElementById('b-uz').addEventListener('click',()=>document.getElementById('b-fi').click());
+document.getElementById('b-uz').addEventListener('dragover',e=>{e.preventDefault();document.getElementById('b-uz').classList.add('drag-over');});
+document.getElementById('b-uz').addEventListener('dragleave',()=>document.getElementById('b-uz').classList.remove('drag-over'));
+document.getElementById('b-uz').addEventListener('drop',e=>{e.preventDefault();document.getElementById('b-uz').classList.remove('drag-over');bHandleFiles(e.dataTransfer.files);});
+document.getElementById('b-fi').addEventListener('change',e=>{bHandleFiles(e.target.files);e.target.value='';});
+
+function bHandleFiles(fileList) {
+  let sk=0;
+  for (const f of fileList) {
+    if (!/\.(xlsx|xls)$/i.test(f.name)) continue;
+    if (bFiles.find(u=>u.name===f.name)) continue;
+    if (bFiles.length>=MAX_BATCH) { sk++; continue; }
+    bFiles.push({file:f,name:f.name,type:getFileType(f.name),meta:parseFileMeta(f.name),sizeLabel:fmtSize(f.size)});
+  }
+  if (sk) alert(`${MAX_BATCH} dosya sınırına ulaşıldı; ${sk} dosya eklenmedi.`);
+  bRenderList(); document.getElementById('b-pb').disabled=bFiles.length===0;
+}
+function bRemoveFile(idx) {
+  bFiles.splice(idx,1); bRenderList();
+  document.getElementById('b-pb').disabled=bFiles.length===0;
+  bState=null; document.getElementById('b-db').style.display='none'; document.getElementById('b-rc').style.display='none';
+}
+function bRenderList() {
+  const el=document.getElementById('b-fl'), fn=document.getElementById('b-fn');
+  const byP=new Map(); bFiles.forEach(f=>{ const k=f.meta.cariId||'?'; if(!byP.has(k)) byP.set(k,0); byP.set(k,byP.get(k)+1); });
+  fn.style.display=bFiles.length?'block':'none';
+  fn.textContent=`${bFiles.length} dosya · ${byP.size} kişi`;
+  el.innerHTML='';
+  bFiles.slice(0,30).forEach((item,i)=>{
+    const bc=item.type==='transactions'?'badge-t':item.type==='archive'?'badge-a':'badge-u';
+    const ms=item.meta.cariId?`${item.meta.cariId} · ${item.meta.adSoyad}`:'';
+    const div=document.createElement('div'); div.className='file-item';
+    div.innerHTML=`<span class="badge ${bc}">${item.type==='transactions'?'T':item.type==='archive'?'A':'?'}</span><span class="file-name" title="${esc(item.name)}">${esc(item.name)}</span>${ms?`<span class="file-meta">${esc(ms)}</span>`:''}<span class="file-size">${item.sizeLabel}</span><span class="file-remove" onclick="bRemoveFile(${i})">✕</span>`;
+    el.appendChild(div);
+  });
+  if (bFiles.length>30) { const p=document.createElement('p'); p.className='file-count-note'; p.style.padding='4px'; p.textContent=`… ve ${bFiles.length-30} dosya daha`; el.appendChild(p); }
+}
+async function topluProcess() {
+  const pb=document.getElementById('b-pb'),db=document.getElementById('b-db'),rc=document.getElementById('b-rc');
+  const sg=document.getElementById('b-sg'),lb=document.getElementById('b-lb');
+  const pw=document.getElementById('b-pw'),pbar=document.getElementById('b-pbar');
+  const validFiles=bFiles.filter(f=>f.type!=='unknown');
+  const totalFiles=validFiles.length;
+  pb.disabled=true; pb.innerHTML=`<span class="spinner"></span> ${totalFiles} dosya yükleniyor…`;
+  rc.style.display='block'; db.style.display='none'; lb.innerHTML=''; sg.innerHTML='';
+  pw.style.display='block'; pbar.style.width='0%'; bState=null;
+  const log=makeLogger('b-lb');
+  bFiles.filter(f=>f.type==='unknown').forEach(f=>log(`⚠  ${f.name}: Tür tanınamadı, atlandı.`,'warning'));
+
+  // Phase 1: tüm arrayBuffer'ları paralel oku (I/O)
+  await new Promise(r=>setTimeout(r,0));
+  const buffers=await Promise.all(validFiles.map(f=>f.file.arrayBuffer()));
+  pbar.style.width='15%';
+
+  // Phase 2: parse (CPU — her 5 dosyada bir yield)
+  const personMap=new Map(); let tRaw=0;
+  for (let i=0;i<validFiles.length;i++) {
+    if (i%5===0) {
+      const pct=Math.round(15+i/totalFiles*55);
+      pb.innerHTML=`<span class="spinner"></span> Dosya ${i+1}/${totalFiles} okunuyor · %${pct} · ${tRaw.toLocaleString('tr-TR')} satır`;
+      pbar.style.width=pct+'%';
+      await new Promise(r=>setTimeout(r,0));
+    }
+    const item=validFiles[i];
+    try {
+      const wb=XLSX.read(new Uint8Array(buffers[i]),{type:'array',cellDates:true});
+      const recs=item.type==='transactions'?parseTransactions(wb,item.name):parseArchive(wb,item.name);
+      tRaw+=recs.length;
+      const key=item.meta.cariId||('UNKNOWN_'+item.name);
+      if (!personMap.has(key)) personMap.set(key,{meta:item.meta,afr:[]});
+      personMap.get(key).afr.push({filename:item.name,records:recs});
+    } catch(e) { log(`✗  ${item.name}: ${e.message}`,'error'); }
+  }
+  log(`${personMap.size} kişi · ${totalFiles} dosya · ${tRaw.toLocaleString('tr-TR')} satır okundu`,'info');
+  pbar.style.width='70%';
+
+  // Phase 3: dedup per person (her 10 kişide bir yield)
+  let tEx=0,tNr=0,tCl=0,done=0; const allClean=[];
+  for (const [,{meta,afr}] of personMap) {
+    if (!afr.length) continue;
+    if (done%10===0) {
+      const pct=Math.round(70+done/personMap.size*28);
+      pb.innerHTML=`<span class="spinner"></span> Kişi ${done+1}/${personMap.size} kontrol · %${pct} · ${allClean.length.toLocaleString('tr-TR')} temiz kayıt`;
+      pbar.style.width=pct+'%';
+      await new Promise(r=>setTimeout(r,0));
+    }
+    const {kept:ae,removed:er}=exactDedup(afr);
+    const {kept:cl,nearRemoved:nr}=nearDedup(sortByDate(ae));
+    tEx+=er.length; tNr+=nr.length; tCl+=cl.length;
+    cl.forEach(r=>{ r.cariId=meta.cariId; r.adSoyad=meta.adSoyad; });
+    allClean.push(...cl); done++;
+    if (personMap.size<=50||done%10===0) log(`✓  [${meta.cariId||'?'}] ${meta.adSoyad||'İsimsiz'} → ${cl.length.toLocaleString('tr-TR')} temiz kayıt`,'success');
+  }
+
+  pb.innerHTML='<span class="spinner"></span> Sıralanıyor…'; pbar.style.width='99%';
+  await new Promise(r=>setTimeout(r,0));
+  allClean.sort((a,b)=>{ const ca=parseInt(a.cariId)||0,cb=parseInt(b.cariId)||0; if(ca!==cb) return ca-cb; const da=toDate(a.rawDate),db=toDate(b.rawDate); if(!da&&!db) return 0; if(!da) return 1; if(!db) return -1; return da-db; });
+  bState={allClean};
+  log(`\n────────────────────────────`,'info');
+  log(`Kişi: ${personMap.size} · Dosya: ${bFiles.length}`,'info');
+  log(`Toplam okunan   : ${tRaw}`,'info');
+  log(`Tam mükerrer    : ${tEx}`,tEx>0?'warning':'success');
+  log(`1000ms mükerrer : ${tNr}`,tNr>0?'warning':'success');
+  log(`Temiz kayıt     : ${tCl}`,'success');
+  sg.innerHTML=[{v:personMap.size,l:'Kişi',c:''},{v:tRaw,l:'Toplam Kayıt',c:''},{v:tEx,l:'Tam Mükerrer',c:tEx>0?' warn':''},{v:tNr,l:'1000ms Mükerrer',c:tNr>0?' warn':''},{v:tCl,l:'Temiz Kayıt',c:''}].map(s=>`<div class="stat-card"><div class="stat-value${s.c}">${s.v}</div><div class="stat-label">${s.l}</div></div>`).join('');
+  pbar.style.width='100%'; pw.style.display='none'; db.style.display='inline-flex';
+  pb.disabled=false; pb.innerHTML='Toplu İşle';
+}
+async function topluDownload() {
+  if (!bState) return;
+  const btn=document.getElementById('b-db');
+  btn.disabled=true;
+  const total=bState.allClean.length;
+  const log=makeLogger('b-lb');
+  try {
+    const buf=await buildWorkbookFast({
+      cleanRecords:bState.allClean,exactRemovedRecords:[],nearRemovedRecords:[],includePersonCols:true,
+      onProgress(done,tot,sheet,sIdx,sTotal){
+        const pct=Math.round(done/tot*100);
+        const sheetInfo=sTotal>1?` · Sheet ${sIdx}/${sTotal}`:'';
+        btn.innerHTML=`<span class="spinner"></span> %${pct} · ${done.toLocaleString('tr-TR')}/${tot.toLocaleString('tr-TR')} satır${sheetInfo}`;
+      }
+    });
+    btn.innerHTML='<span class="spinner"></span> Kaydediliyor…';
+    triggerDownloadFast(buf,`TopluHesapHareketleri_${todayStamp()}.xlsx`);
+    log(`✓ ${total.toLocaleString('tr-TR')} satır Excel'e aktarıldı.`,'success');
+  } catch(e) { log('✗ İndirme hatası: '+e.message,'error'); alert('Hata: '+e.message); }
+  btn.disabled=false; btn.innerHTML='⬇&nbsp; Toplu Excel İndir';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BİRLEŞİK EXCEL MODE
+   — Uploaded files already have CariId/AdSoyad columns.
+   — Each file may contain multiple people's data.
+   — Dedup is cross-file, per-person (CariId is part of the key).
+   — Same-file records are never removed against each other.
+═══════════════════════════════════════════════════════════════ */
+let mFiles=[], mState=null;
+
+document.getElementById('m-uz').addEventListener('click',()=>document.getElementById('m-fi').click());
+document.getElementById('m-uz').addEventListener('dragover',e=>{e.preventDefault();document.getElementById('m-uz').classList.add('drag-over');});
+document.getElementById('m-uz').addEventListener('dragleave',()=>document.getElementById('m-uz').classList.remove('drag-over'));
+document.getElementById('m-uz').addEventListener('drop',e=>{e.preventDefault();document.getElementById('m-uz').classList.remove('drag-over');mHandleFiles(e.dataTransfer.files);});
+document.getElementById('m-fi').addEventListener('change',e=>{mHandleFiles(e.target.files);e.target.value='';});
+
+function mHandleFiles(fileList) {
+  for (const f of fileList) {
+    if (!/\.(xlsx|xls)$/i.test(f.name)) continue;
+    if (mFiles.find(u=>u.name===f.name)) continue;
+    mFiles.push({file:f,name:f.name,sizeLabel:fmtSize(f.size)});
+  }
+  mRenderList(); document.getElementById('m-pb').disabled=mFiles.length===0;
+}
+function mRemoveFile(idx) {
+  mFiles.splice(idx,1); mRenderList();
+  document.getElementById('m-pb').disabled=mFiles.length===0;
+  mState=null; document.getElementById('m-db').style.display='none'; document.getElementById('m-rc').style.display='none';
+}
+function mRenderList() {
+  const el=document.getElementById('m-fl'), fn=document.getElementById('m-fn');
+  fn.style.display=mFiles.length?'block':'none';
+  fn.textContent=`${mFiles.length} dosya yüklendi`;
+  el.innerHTML='';
+  mFiles.forEach((item,i)=>{
+    const div=document.createElement('div'); div.className='file-item';
+    div.innerHTML=`<span class="badge badge-m">Birleşik</span><span class="file-name" title="${esc(item.name)}">${esc(item.name)}</span><span class="file-size">${item.sizeLabel}</span><span class="file-remove" onclick="mRemoveFile(${i})">✕</span>`;
+    el.appendChild(div);
+  });
+}
+function birlesikTab(name) {
+  ['clean','dupes','kontrol'].forEach(t=>{
+    document.getElementById(`m-tab-${t}`).classList.toggle('active',t===name);
+    document.getElementById(`m-p-${t}`).classList.toggle('active',t===name);
+  });
+}
+async function birlesikProcess() {
+  const pb=document.getElementById('m-pb'),db=document.getElementById('m-db'),rc=document.getElementById('m-rc');
+  const sg=document.getElementById('m-sg'),lb=document.getElementById('m-lb');
+  const pw=document.getElementById('m-pw'),pbar=document.getElementById('m-pbar');
+  const totalFiles=mFiles.length;
+  pb.disabled=true; pb.innerHTML=`<span class="spinner"></span> ${totalFiles} dosya yükleniyor… %0`;
+  rc.style.display='block'; db.style.display='none'; lb.innerHTML=''; sg.innerHTML='';
+  ['clean','dupes','kontrol'].forEach(t=>{ document.getElementById(`m-p-${t}`).innerHTML=''; document.getElementById(`m-c${t[0]}`).textContent='0'; });
+  pw.style.display='block'; pbar.style.width='0%';
+  mState=null; birlesikTab('clean');
+  const log=makeLogger('m-lb');
+
+  // Phase 1: paralel arrayBuffer okuma
+  await new Promise(r=>setTimeout(r,0));
+  const buffers=await Promise.all(mFiles.map(f=>f.file.arrayBuffer()));
+  pbar.style.width='15%';
+
+  // Phase 2: parse
+  const allFile=[]; let totalRaw=0;
+  for (let i=0;i<mFiles.length;i++) {
+    if (i%3===0) {
+      const pct=Math.round(15+i/totalFiles*40);
+      pb.innerHTML=`<span class="spinner"></span> Dosya ${i+1}/${totalFiles} okunuyor · %${pct} · ${totalRaw.toLocaleString('tr-TR')} satır`;
+      pbar.style.width=pct+'%';
+      await new Promise(r=>setTimeout(r,0));
+    }
+    const item=mFiles[i];
+    try {
+      const wb=XLSX.read(new Uint8Array(buffers[i]),{type:'array',cellDates:true});
+      const recs=parseMultiPersonExcel(wb,item.name);
+      totalRaw+=recs.length; allFile.push({filename:item.name,records:recs});
+      if (totalFiles<=20) log(`✓  ${item.name} → ${recs.length.toLocaleString('tr-TR')} kayıt`,'success');
+    } catch(e) { log(`✗  ${item.name}: ${e.message}`,'error'); }
+  }
+  if (totalFiles>20) log(`${totalFiles} dosya okundu · ${totalRaw.toLocaleString('tr-TR')} kayıt`,'success');
+  if (!allFile.length) { log('İşlenebilir dosya yok.','error'); pb.disabled=false; pb.innerHTML='İşle'; pw.style.display='none'; return; }
+
+  const personSet=new Set();
+  allFile.forEach(({records})=>records.forEach(r=>personSet.add(String(r.cariId).trim().toLowerCase()+'|'+String(r.adSoyad).trim().toLowerCase())));
+  log(`Farklı kişi: ${personSet.size}`,'info');
+
+  // Phase 3: exactDedup
+  pb.innerHTML=`<span class="spinner"></span> Tam mükerrer kontrolü… %55`;
+  pbar.style.width='55%'; await new Promise(r=>setTimeout(r,0));
+  const {kept:ae,removed:er}=exactDedup(allFile);
+  log(`  Tam mükerrer çıkarılan: ${er.length.toLocaleString('tr-TR')}`,er.length>0?'warning':'success');
+
+  // Phase 4: nearDedup
+  pb.innerHTML=`<span class="spinner"></span> 1000ms mükerrer kontrolü… %70`;
+  pbar.style.width='70%'; await new Promise(r=>setTimeout(r,0));
+  const {kept:clean,nearRemoved:nr}=nearDedup(sortByCariDate(ae));
+  log(`  1000ms mükerrer çıkarılan: ${nr.length.toLocaleString('tr-TR')}`,nr.length>0?'warning':'success');
+
+  // Phase 5: sort
+  pb.innerHTML=`<span class="spinner"></span> Sıralanıyor… %85 · ${clean.length.toLocaleString('tr-TR')} temiz kayıt`;
+  pbar.style.width='85%'; await new Promise(r=>setTimeout(r,0));
+  clean.sort((a,b)=>{ const ca=parseInt(a.cariId)||0,cb=parseInt(b.cariId)||0; if(ca!==cb) return ca-cb; const da=toDate(a.rawDate),db=toDate(b.rawDate); if(!da&&!db) return 0; if(!da) return 1; if(!db) return -1; return da-db; });
+
+  mState={cleanRecords:clean,exactRemoved:er,nearRemoved:nr,persons:personSet.size};
+  log(`\n────────────────────────────`,'info');
+  log(`Farklı kişi     : ${personSet.size}`,'info');
+  log(`Toplam okunan   : ${totalRaw.toLocaleString('tr-TR')}`,'info');
+  log(`Tam mükerrer    : ${er.length.toLocaleString('tr-TR')}`,er.length>0?'warning':'success');
+  log(`1000ms mükerrer : ${nr.length.toLocaleString('tr-TR')}`,nr.length>0?'warning':'success');
+  log(`Temiz kayıt     : ${clean.length.toLocaleString('tr-TR')}`,'success');
+  sg.innerHTML=[
+    {v:personSet.size,l:'Kişi',c:''},
+    {v:totalRaw.toLocaleString('tr-TR'),l:'Toplam Kayıt',c:''},
+    {v:er.length.toLocaleString('tr-TR'),l:'Tam Mükerrer',c:er.length>0?' warn':''},
+    {v:nr.length.toLocaleString('tr-TR'),l:'1000ms Mükerrer',c:nr.length>0?' warn':''},
+    {v:clean.length.toLocaleString('tr-TR'),l:'Temiz Kayıt',c:''},
+  ].map(s=>`<div class="stat-card"><div class="stat-value${s.c}">${s.v}</div><div class="stat-label">${s.l}</div></div>`).join('');
+  document.getElementById('m-cc').textContent=clean.length.toLocaleString('tr-TR');
+  document.getElementById('m-cd').textContent=er.length.toLocaleString('tr-TR');
+  document.getElementById('m-ck').textContent=nr.length.toLocaleString('tr-TR');
+
+  pb.innerHTML=`<span class="spinner"></span> Tablo hazırlanıyor… %95`;
+  pbar.style.width='95%'; await new Promise(r=>setTimeout(r,0));
+  renderPanel(document.getElementById('m-p-clean'), clean,null,null,null,true);
+  renderPanel(document.getElementById('m-p-dupes'), er,   null,null,`<div class="info-box green">Farklı dosyalarda, aynı kişiye ait birebir aynı olan <strong>${er.length.toLocaleString('tr-TR')}</strong> kayıt temizlendi.</div>`,true);
+  renderPanel(document.getElementById('m-p-kontrol'),nr,  null,null,`<div class="info-box yellow">⚠ Aynı kişiye ait, değerleri birebir aynı, farklı dosyalar arası ≤1000ms farkla otomatik silinen <strong>${nr.length.toLocaleString('tr-TR')}</strong> kayıt.</div>`,true,500);
+  pbar.style.width='100%'; pw.style.display='none'; db.style.display='inline-flex';
+  pb.disabled=false; pb.innerHTML='İşle';
+}
+async function birlesikDownload() {
+  if (!mState) return;
+  const btn=document.getElementById('m-db');
+  btn.disabled=true;
+  const total=mState.cleanRecords.length;
+  const log=makeLogger('m-lb');
+  try {
+    const buf=await buildWorkbookFast({
+      cleanRecords:mState.cleanRecords,exactRemovedRecords:mState.exactRemoved,nearRemovedRecords:mState.nearRemoved,includePersonCols:true,
+      onProgress(done,tot,sheet,sIdx,sTotal){
+        const pct=Math.round(done/tot*100);
+        const sheetInfo=sTotal>1?` · Sheet ${sIdx}/${sTotal}`:'';
+        btn.innerHTML=`<span class="spinner"></span> %${pct} · ${done.toLocaleString('tr-TR')}/${tot.toLocaleString('tr-TR')} satır${sheetInfo}`;
+      }
+    });
+    btn.innerHTML='<span class="spinner"></span> Kaydediliyor…';
+    triggerDownloadFast(buf,`BirlesikHesapHareketleri_${todayStamp()}.xlsx`);
+    log(`✓ ${total.toLocaleString('tr-TR')} satır Excel'e aktarıldı.`,'success');
+  } catch(e) { log('✗ İndirme hatası: '+e.message,'error'); alert('Hata: '+e.message); }
+  btn.disabled=false; btn.innerHTML='⬇&nbsp; Excel İndir';
+}
+</script>
+</body>
+</html>
